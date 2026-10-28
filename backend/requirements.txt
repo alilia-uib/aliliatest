@@ -1,0 +1,4 @@
+fastapi[standard]==0.112.0
+neo4j==6.2.0
+python-dotenv==1.2.2
+uvicorn

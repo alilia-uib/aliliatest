@@ -1,0 +1,107 @@
+# ------------------------
+# OS / System files
+# ------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ------------------------
+# Editor / IDE
+# ------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.log
+
+# ------------------------
+# Environment / secrets
+# ------------------------
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# ------------------------
+# Node.js
+# ------------------------
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# Build output
+dist/
+frontend/deploy/
+deployment/*.zip
+release.zip
+build/
+.next/
+out/
+coverage/
+
+# ------------------------
+# Python
+# ------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+
+# ------------------------
+# Testing / coverage
+# ------------------------
+coverage/
+reports/
+*.lcov
+
+# ------------------------
+# Logs
+# ------------------------
+logs/
+*.log
+
+# ------------------------
+# Temp / cache
+# ------------------------
+.tmp/
+temp/
+.cache/
+.cache-loader/
+.parcel-cache/
+
+# ------------------------
+# Docker
+# ------------------------
+docker-compose.override.yml
+
+# ------------------------
+# Database / local data
+# ------------------------
+*.sqlite
+*.db
+
+# ------------------------
+# Misc
+# ------------------------
+*.bak
+*.backup
+*.old
+*.orig
+
+# ------------------------
+# Git
+# ------------------------
+*.patch

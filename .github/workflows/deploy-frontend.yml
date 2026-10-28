@@ -1,0 +1,177 @@
+name: Deploy Frontend to Azure App Service (container)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-frontend-production
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: lnett-webapp-infrasight1
+  FRONTEND_PATH: frontend
+  IMAGE_NAME: infrasight-frontend
+  APP_PORT: '8080'
+
+jobs:
+  build-and-deploy:
+    name: Build image and deploy frontend
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        env:
+          ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+        run: |
+          if [ -z "${ACR_NAME}" ]; then
+            echo "::error::Variable AZURE_ACR_NAME is not set."
+            exit 1
+          fi
+          acr_login_server=$(az acr show --name "${ACR_NAME}" --query loginServer -o tsv)
+          az acr login --name "${ACR_NAME}"
+          echo "ACR_LOGIN_SERVER=${acr_login_server}" >> "$GITHUB_ENV"
+
+      # VITE_API_BASE_URL is baked into the bundle at build time; without it the
+      # image would call http://127.0.0.1:8000.
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.FRONTEND_PATH }}
+          file: ${{ env.FRONTEND_PATH }}/Dockerfile
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+          load: true
+          push: false
+          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test image
+        env:
+          IMAGE: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cid=$(docker run -d -p 8080:8080 "${IMAGE}")
+          trap 'docker logs "${cid}" || true; docker rm -f "${cid}" > /dev/null' EXIT
+
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8080/ > /dev/null; then break; fi
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
+          curl -fsS http://127.0.0.1:8080/some/client/route | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/%E0%A4%A')" = "400"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/server.mjs)" = "200"
+          ! curl -fsS http://127.0.0.1:8080/server.mjs | grep -q 'createServer'
+
+      - name: Push image to registry
+        env:
+          IMAGE: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: docker push "${IMAGE}"
+
+      # The App Service pulls the image with its system-assigned managed identity,
+      # which needs the AcrPull role on the registry.
+      - name: Configure App Service
+        uses: azure/cli@v2
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+          IMAGE: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+
+            if [ -z "${RESOURCE_GROUP}" ]; then
+              echo "::error::Secret AZURE_RESOURCE_GROUP is not set."
+              exit 1
+            fi
+
+            principal_id=$(az webapp identity assign \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query principalId -o tsv)
+            acr_id=$(az acr show --name "${ACR_NAME}" --query id -o tsv)
+            if [ -z "$(az role assignment list --assignee "${principal_id}" --role AcrPull \
+                --scope "${acr_id}" --query '[0].id' -o tsv)" ]; then
+              az role assignment create --assignee-object-id "${principal_id}" \
+                --assignee-principal-type ServicePrincipal \
+                --role AcrPull --scope "${acr_id}" --output none \
+                || echo "::warning::Could not grant AcrPull to ${AZURE_WEBAPP_NAME}. Grant it manually or the image pull will fail."
+            fi
+
+            az resource update \
+              --resource-group "${RESOURCE_GROUP}" \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-type Microsoft.Web/sites \
+              --set properties.siteConfig.acrUseManagedIdentityCreds=true \
+              --output none
+
+            az webapp config container set \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --container-image-name "${IMAGE}" \
+              --container-registry-url "https://${ACR_LOGIN_SERVER}" \
+              --output none
+
+            # Clear any startup command left over from the zip deployment; in container
+            # mode it would override the image's CMD.
+            az webapp config set \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --startup-file "" \
+              --output none
+
+            az webapp config appsettings set \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --settings WEBSITES_PORT="${APP_PORT}" SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              --output none
+
+            az webapp restart \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --output none
+
+      - name: Verify deployment
+        uses: azure/cli@v2
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+            host=$(az webapp show --name "${AZURE_WEBAPP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+              --query defaultHostName -o tsv)
+            for i in $(seq 1 30); do
+              if curl -fsS "https://${host}/" | grep -q '<div id="root">'; then
+                echo "Frontend is responding at https://${host}"
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::Frontend did not respond at https://${host} after deployment."
+            exit 1
+
+      - name: Azure logout
+        if: always()
+        run: az logout || true
