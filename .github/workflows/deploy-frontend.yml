@@ -2,8 +2,8 @@ name: Deploy Frontend to Azure App Service (container)
 
 # Required repository configuration:
 #   Secrets:   AZURE_CREDENTIALS (azure/login service principal JSON)
-#              VITE_API_BASE_URL (backend URL baked into the frontend bundle at build time)
 #   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP, FRONTEND_WEBAPP_NAME
+#              VITE_API_BASE_URL (backend URL baked into the bundle; a secret of the same name also works)
 on:
   push:
     branches:
@@ -64,7 +64,7 @@ jobs:
           context: ${{ env.FRONTEND_PATH }}
           file: ${{ env.FRONTEND_PATH }}/Dockerfile
           build-args: |
-            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL }}
           load: true
           push: false
           tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
