@@ -3,7 +3,7 @@ name: Deploy Frontend to Azure App Service (container)
 # Required repository configuration:
 #   Secrets:   AZURE_CREDENTIALS (azure/login service principal JSON)
 #   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP, FRONTEND_WEBAPP_NAME
-#              VITE_API_BASE_URL (backend URL baked into the bundle; a secret of the same name also works)
+#              VITE_API_BASE_URL (backend URL for the bundle; secret or variable)
 on:
   push:
     branches:
