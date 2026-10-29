@@ -21,7 +21,7 @@ concurrency:
 
 env:
   AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
-  FRONTEND_WEBAPP_NAME: lnett-webapp-infrasight1
+  FRONTEND_WEBAPP_NAME: ${{ vars.FRONTEND_WEBAPP_NAME }}
   BACKEND_PATH: backend
   IMAGE_NAME: infrasight-backend
   APP_PORT: '8000'
