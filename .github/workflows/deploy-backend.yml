@@ -50,6 +50,9 @@ jobs:
           az acr login --name "${ACR_NAME}"
           echo "ACR_LOGIN_SERVER=${acr_login_server}" >> "$GITHUB_ENV"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build backend image
         uses: docker/build-push-action@v6
         with:
