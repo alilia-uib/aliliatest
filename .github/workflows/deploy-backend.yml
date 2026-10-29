@@ -94,7 +94,10 @@ jobs:
       - name: Configure App Service
         uses: azure/cli@v2
         env:
-          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_WEBAPP_NAME: ${{ env.AZURE_WEBAPP_NAME }}
+          FRONTEND_WEBAPP_NAME: ${{ env.FRONTEND_WEBAPP_NAME }}
+          APP_PORT: ${{ env.APP_PORT }}
           ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
           ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
           IMAGE: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -104,7 +107,7 @@ jobs:
             set -euo pipefail
 
             if [ -z "${RESOURCE_GROUP}" ]; then
-              echo "::error::Secret AZURE_RESOURCE_GROUP is not set."
+              echo "::error::Variable AZURE_RESOURCE_GROUP is not set."
               exit 1
             fi
 
@@ -191,7 +194,8 @@ jobs:
       - name: Verify deployment
         uses: azure/cli@v2
         env:
-          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_WEBAPP_NAME: ${{ env.AZURE_WEBAPP_NAME }}
         with:
           azcliversion: latest
           inlineScript: |
