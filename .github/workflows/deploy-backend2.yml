@@ -15,16 +15,15 @@ concurrency:
   group: deploy-backend-zip-production
   cancel-in-progress: false
 
-env:
-  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
-  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-  APP_PORT: '8000'
-
 jobs:
   zip-and-deploy:
     name: Zip backend and deploy
     runs-on: ubuntu-latest
     environment: production
+    env:
+      AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      APP_PORT: '8000'
 
     steps:
       - name: Checkout repository
@@ -86,7 +85,7 @@ jobs:
             --resource-group "${RESOURCE_GROUP}" \
             --query defaultHostName -o tsv)
           url="https://${host}/openapi.json"
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS "${url}" > /dev/null; then
               echo "Backend is responding at ${url}"
               exit 0
