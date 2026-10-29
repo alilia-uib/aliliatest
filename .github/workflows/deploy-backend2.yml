@@ -21,11 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
-      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       APP_PORT: '8000'
 
     steps:
+      - name: Load deployment settings
+        env:
+          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          echo "AZURE_WEBAPP_NAME=${AZURE_WEBAPP_NAME}" >> "$GITHUB_ENV"
+          echo "RESOURCE_GROUP=${RESOURCE_GROUP}" >> "$GITHUB_ENV"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

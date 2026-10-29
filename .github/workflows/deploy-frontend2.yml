@@ -1,0 +1,124 @@
+name: Deploy Frontend (zip) to Azure App Service
+
+# Parallel alternative to deploy-frontend.yml (container deploy).
+# Both target the same web app, so run only one of them at a time.
+# Required repository configuration:
+#   Secret:   AZURE_CREDENTIALS (azure/login service principal JSON)
+#   Variables: AZURE_RESOURCE_GROUP, FRONTEND_WEBAPP_NAME
+#   Secret or variable: VITE_API_BASE_URL (backend URL for the build)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-frontend-zip-production
+  cancel-in-progress: false
+
+jobs:
+  zip-and-deploy:
+    name: Build frontend, zip and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APP_PORT: '8080'
+
+    steps:
+      - name: Load deployment settings
+        env:
+          AZURE_WEBAPP_NAME: ${{ vars.FRONTEND_WEBAPP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          echo "AZURE_WEBAPP_NAME=${AZURE_WEBAPP_NAME}" >> "$GITHUB_ENV"
+          echo "RESOURCE_GROUP=${RESOURCE_GROUP}" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Switch App Service to Node code runtime
+        run: |
+          set -euo pipefail
+          az webapp config container delete \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --output none || true
+          az webapp config set \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --linux-fx-version "NODE|22-lts" \
+            --startup-file "node server.mjs" \
+            --output none
+          # The zip already contains the built site, so skip the remote build.
+          az webapp config appsettings set \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --settings WEBSITES_PORT="${APP_PORT}" \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            --output none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: >-
+            ${{ secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VITE_API_BASE_URL}" ]; then
+            echo "::error::VITE_API_BASE_URL secret or variable is not set."
+            exit 1
+          fi
+          npm ci
+          npm run build
+
+      - name: Create frontend zip
+        run: |
+          set -euo pipefail
+          site="${RUNNER_TEMP}/site"
+          mkdir -p "${site}/public"
+          cp -r frontend/dist/. "${site}/public/"
+          cp frontend/docker/static-server.mjs "${site}/server.mjs"
+          (cd "${site}" && zip -qr "${RUNNER_TEMP}/frontend.zip" .)
+          ls -lh "${RUNNER_TEMP}/frontend.zip"
+
+      - name: Deploy zip to web app
+        run: |
+          set -euo pipefail
+          az webapp deploy \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --src-path "${RUNNER_TEMP}/frontend.zip" \
+            --type zip \
+            --clean true \
+            --restart true \
+            --timeout 900
+
+      - name: Verify frontend responds
+        run: |
+          set -euo pipefail
+          host=$(az webapp show \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query defaultHostName -o tsv)
+          url="https://${host}/"
+          for i in $(seq 1 60); do
+            if curl -fsS "${url}" | grep -q '<div id="root">'; then
+              echo "Frontend is responding at ${url}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Frontend not responding at ${url}"
+          exit 1
