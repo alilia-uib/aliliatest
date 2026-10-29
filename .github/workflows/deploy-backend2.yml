@@ -1,0 +1,97 @@
+name: Deploy Backend (zip) to Azure App Service
+
+# Parallel alternative to deploy-backend.yml (container deploy).
+# Both target the same web app, so run only one of them at a time.
+# Required repository configuration:
+#   Secret:   AZURE_CREDENTIALS (azure/login service principal JSON)
+#   Variables: AZURE_RESOURCE_GROUP, AZURE_WEBAPP_NAME
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-zip-production
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  APP_PORT: '8000'
+
+jobs:
+  zip-and-deploy:
+    name: Zip backend and deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Switch App Service to Python code runtime
+        run: |
+          set -euo pipefail
+          az webapp config container delete \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --output none || true
+          az webapp config set \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --linux-fx-version "PYTHON|3.11" \
+            --startup-file "python -m uvicorn main:app " \
+              "--host 0.0.0.0 --port ${APP_PORT}" \
+            --output none
+          # Oryx installs requirements.txt during deployment.
+          az webapp config appsettings set \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --settings WEBSITES_PORT="${APP_PORT}" \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              ENABLE_ORYX_BUILD=true \
+            --output none
+
+      - name: Create backend zip
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          zip -qr "${RUNNER_TEMP}/backend.zip" . \
+            -x "*__pycache__*" "*.pyc" "Dockerfile" ".dockerignore"
+          ls -lh "${RUNNER_TEMP}/backend.zip"
+
+      - name: Deploy zip to web app
+        run: |
+          set -euo pipefail
+          az webapp deploy \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --src-path "${RUNNER_TEMP}/backend.zip" \
+            --type zip \
+            --clean true \
+            --restart true \
+            --timeout 900
+
+      - name: Verify backend responds
+        run: |
+          set -euo pipefail
+          host=$(az webapp show \
+            --name "${AZURE_WEBAPP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query defaultHostName -o tsv)
+          url="https://${host}/openapi.json"
+          for i in $(seq 1 60); do
+            if curl -fsS "${url}" > /dev/null; then
+              echo "Backend is responding at ${url}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Backend not responding at ${url}"
+          exit 1
