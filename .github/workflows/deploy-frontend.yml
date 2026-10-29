@@ -1,5 +1,9 @@
 name: Deploy Frontend to Azure App Service (container)
 
+# Required repository configuration:
+#   Secrets:   AZURE_CREDENTIALS (azure/login service principal JSON)
+#              VITE_API_BASE_URL (backend URL baked into the frontend bundle at build time)
+#   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP, FRONTEND_WEBAPP_NAME
 on:
   push:
     branches:
@@ -17,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AZURE_WEBAPP_NAME: lnett-webapp-infrasight1
+  AZURE_WEBAPP_NAME: ${{ vars.FRONTEND_WEBAPP_NAME }}
   FRONTEND_PATH: frontend
   IMAGE_NAME: infrasight-frontend
   APP_PORT: '8080'
@@ -48,6 +52,9 @@ jobs:
           acr_login_server=$(az acr show --name "${ACR_NAME}" --query loginServer -o tsv)
           az acr login --name "${ACR_NAME}"
           echo "ACR_LOGIN_SERVER=${acr_login_server}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       # VITE_API_BASE_URL is baked into the bundle at build time; without it the
       # image would call http://127.0.0.1:8000.
@@ -92,7 +99,9 @@ jobs:
       - name: Configure App Service
         uses: azure/cli@v2
         env:
-          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_WEBAPP_NAME: ${{ env.AZURE_WEBAPP_NAME }}
+          APP_PORT: ${{ env.APP_PORT }}
           ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
           ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
           IMAGE: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -102,7 +111,7 @@ jobs:
             set -euo pipefail
 
             if [ -z "${RESOURCE_GROUP}" ]; then
-              echo "::error::Secret AZURE_RESOURCE_GROUP is not set."
+              echo "::error::Variable AZURE_RESOURCE_GROUP is not set."
               exit 1
             fi
 
@@ -155,7 +164,8 @@ jobs:
       - name: Verify deployment
         uses: azure/cli@v2
         env:
-          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_WEBAPP_NAME: ${{ env.AZURE_WEBAPP_NAME }}
         with:
           azcliversion: latest
           inlineScript: |
