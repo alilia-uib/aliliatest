@@ -43,6 +43,7 @@ jobs:
       - name: Switch App Service to Python code runtime
         run: |
           set -euo pipefail
+          startup="python -m uvicorn main:app --host 0.0.0.0 --port ${APP_PORT}"
           az webapp config container delete \
             --name "${AZURE_WEBAPP_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
@@ -51,8 +52,7 @@ jobs:
             --name "${AZURE_WEBAPP_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
             --linux-fx-version "PYTHON|3.11" \
-            --startup-file "python -m uvicorn main:app " \
-              "--host 0.0.0.0 --port ${APP_PORT}" \
+            --startup-file "${startup}" \
             --output none
           # Oryx installs requirements.txt during deployment.
           az webapp config appsettings set \
