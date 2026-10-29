@@ -167,13 +167,17 @@ jobs:
               frontend_host=$(az webapp show \
                 --name "${FRONTEND_WEBAPP_NAME}" \
                 --resource-group "${RESOURCE_GROUP}" \
-                --query defaultHostName -o tsv)
-              az webapp config appsettings set \
-                --name "${AZURE_WEBAPP_NAME}" \
-                --resource-group "${RESOURCE_GROUP}" \
-                --settings CORS_ALLOWED_ORIGINS="https://${frontend_host}" \
-                --output none
-              echo "Set CORS_ALLOWED_ORIGINS=https://${frontend_host}"
+                --query defaultHostName -o tsv 2>/dev/null || true)
+              if [ -n "${frontend_host}" ]; then
+                az webapp config appsettings set \
+                  --name "${AZURE_WEBAPP_NAME}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --settings CORS_ALLOWED_ORIGINS="https://${frontend_host}" \
+                  --output none
+                echo "Set CORS_ALLOWED_ORIGINS=https://${frontend_host}"
+              else
+                echo "::warning::Web app ${FRONTEND_WEBAPP_NAME} not found in ${RESOURCE_GROUP}; CORS_ALLOWED_ORIGINS not set by default."
+              fi
             else
               echo "CORS_ALLOWED_ORIGINS already set: ${existing_cors}"
             fi
