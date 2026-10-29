@@ -113,7 +113,7 @@ jobs:
             --resource-group "${RESOURCE_GROUP}" \
             --query defaultHostName -o tsv)
           url="https://${host}/"
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS "${url}" | grep -q '<div id="root">'; then
               echo "Frontend is responding at ${url}"
               exit 0
