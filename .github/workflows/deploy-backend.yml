@@ -1,5 +1,8 @@
 name: Deploy Backend to Azure App Service (container)
 
+# Required repository configuration:
+#   Secret:   AZURE_CREDENTIALS (azure/login service principal JSON)
+#   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP
 on:
   push:
     branches:
