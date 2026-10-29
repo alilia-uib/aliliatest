@@ -2,7 +2,7 @@ name: Deploy Backend to Azure App Service (container)
 
 # Required repository configuration:
 #   Secret:   AZURE_CREDENTIALS (azure/login service principal JSON)
-#   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP
+#   Variables: AZURE_ACR_NAME, AZURE_RESOURCE_GROUP, AZURE_WEBAPP_NAME
 on:
   push:
     branches:
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AZURE_WEBAPP_NAME: lnett-webapp-infrasight1-api
+  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
   FRONTEND_WEBAPP_NAME: lnett-webapp-infrasight1
   BACKEND_PATH: backend
   IMAGE_NAME: infrasight-backend
